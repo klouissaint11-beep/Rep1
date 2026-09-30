@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Daily To-Do">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <title>Daily To-Do</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --card: #ffffff;
+      --text: #1f2330;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #4f46e5;
+      --accent-soft: #eef2ff;
+      --done: #9ca3af;
+      --danger: #dc2626;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1117;
+        --card: #1a1d27;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --border: #2a2e3a;
+        --accent: #818cf8;
+        --accent-soft: #23264a;
+        --done: #6b7280;
+        --danger: #f87171;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom));
+    }
+    main { max-width: 560px; margin: 0 auto; }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; padding: 20px 0 12px;
+    }
+    .day-nav { display: flex; align-items: center; gap: 4px; }
+    .icon-btn {
+      border: 1px solid var(--border); background: var(--card); color: var(--text);
+      width: 40px; height: 40px; border-radius: 10px; font-size: 18px; cursor: pointer;
+    }
+    h1 { margin: 0; font-size: 22px; }
+    .sub { color: var(--muted); font-size: 14px; }
+    .today-link {
+      border: none; background: none; color: var(--accent); font: inherit;
+      font-size: 14px; cursor: pointer; padding: 0;
+    }
+    .progress { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; margin: 4px 0 16px; }
+    .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .25s; }
+    form { display: flex; gap: 8px; margin-bottom: 16px; }
+    input[type=text] {
+      flex: 1; min-width: 0; padding: 12px 14px; font-size: 16px;
+      border: 1px solid var(--border); border-radius: 12px;
+      background: var(--card); color: var(--text);
+    }
+    input[type=text]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+    .add-btn {
+      padding: 0 18px; border: none; border-radius: 12px;
+      background: var(--accent); color: #fff; font-size: 16px; font-weight: 600; cursor: pointer;
+    }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+    }
+    li input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); flex-shrink: 0; }
+    li .text { flex: 1; word-break: break-word; }
+    li.done .text { text-decoration: line-through; color: var(--done); }
+    li .del {
+      border: none; background: none; color: var(--muted); font-size: 20px;
+      cursor: pointer; padding: 0 4px; line-height: 1;
+    }
+    li .del:hover { color: var(--danger); }
+    .empty { text-align: center; color: var(--muted); padding: 32px 0; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .link-btn {
+      border: 1px solid var(--border); background: var(--card); color: var(--text);
+      padding: 8px 12px; border-radius: 10px; font-size: 14px; cursor: pointer;
+    }
+    .link-btn[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1 id="title">Today</h1>
+        <div class="sub"><span id="date"></span> <button class="today-link" id="goToday" hidden>· Back to today</button></div>
+      </div>
+      <div class="day-nav">
+        <button class="icon-btn" id="prev" aria-label="Previous day">‹</button>
+        <button class="icon-btn" id="next" aria-label="Next day">›</button>
+      </div>
+    </header>
+
+    <div class="progress"><div id="bar"></div></div>
+
+    <form id="form">
+      <input type="text" id="input" placeholder="Add a to-do…" autocomplete="off" aria-label="New to-do">
+      <button class="add-btn" type="submit">Add</button>
+    </form>
+
+    <ul id="list"></ul>
+    <p class="empty" id="empty">Nothing here yet. Add your first to-do above.</p>
+
+    <div class="actions">
+      <button class="link-btn" id="carry" hidden>Bring over unfinished from yesterday</button>
+      <button class="link-btn" id="clearDone" hidden>Clear completed</button>
+    </div>
+  </main>
+
+  <script>
+    const STORAGE_KEY = 'daily-todo-v1';
+    const $ = (id) => document.getElementById(id);
+
+    function load() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+      catch { return {}; }
+    }
+    function save() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+    }
+
+    // Dates are keyed as YYYY-MM-DD in the viewer's local time zone.
+    function keyFor(d) {
+      const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+    function shift(d, days) { const n = new Date(d); n.setDate(n.getDate() + days); return n; }
+
+    let data = load();
+    let current = new Date();
+
+    function tasks() { return data[keyFor(current)] || []; }
+    function setTasks(list) {
+      const k = keyFor(current);
+      if (list.length) data[k] = list; else delete data[k];
+      save();
+      render();
+    }
+
+    function render() {
+      const todayKey = keyFor(new Date());
+      const k = keyFor(current);
+      const diff = Math.round((new Date(k) - new Date(todayKey)) / 86400000);
+      $('title').textContent = diff === 0 ? 'Today' : diff === -1 ? 'Yesterday' : diff === 1 ? 'Tomorrow'
+        : current.toLocaleDateString(undefined, { weekday: 'long' });
+      $('date').textContent = current.toLocaleDateString(undefined, { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
+      $('goToday').hidden = diff === 0;
+
+      const list = tasks();
+      const ul = $('list');
+      ul.innerHTML = '';
+      list.forEach((t) => {
+        const li = document.createElement('li');
+        if (t.done) li.className = 'done';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = t.done;
+        cb.setAttribute('aria-label', t.text);
+        cb.onchange = () => setTasks(tasks().map((x) => x.id === t.id ? { ...x, done: cb.checked } : x));
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = t.text;
+        const del = document.createElement('button');
+        del.className = 'del';
+        del.textContent = '×';
+        del.setAttribute('aria-label', 'Delete ' + t.text);
+        del.onclick = () => setTasks(tasks().filter((x) => x.id !== t.id));
+        li.append(cb, span, del);
+        ul.append(li);
+      });
+
+      const done = list.filter((t) => t.done).length;
+      $('bar').style.width = list.length ? (done / list.length * 100) + '%' : '0';
+      $('empty').hidden = list.length > 0;
+      $('clearDone').hidden = done === 0;
+
+      const prev = data[keyFor(shift(current, -1))] || [];
+      const existing = new Set(list.map((t) => t.text));
+      $('carry').hidden = !prev.some((t) => !t.done && !existing.has(t.text));
+    }
+
+    $('form').onsubmit = (e) => {
+      e.preventDefault();
+      const text = $('input').value.trim();
+      if (!text) return;
+      setTasks([...tasks(), { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text, done: false }]);
+      $('input').value = '';
+      $('input').focus();
+    };
+    $('prev').onclick = () => { current = shift(current, -1); render(); };
+    $('next').onclick = () => { current = shift(current, 1); render(); };
+    $('goToday').onclick = () => { current = new Date(); render(); };
+    $('clearDone').onclick = () => setTasks(tasks().filter((t) => !t.done));
+    $('carry').onclick = () => {
+      const list = tasks();
+      const existing = new Set(list.map((t) => t.text));
+      const carried = (data[keyFor(shift(current, -1))] || [])
+        .filter((t) => !t.done && !existing.has(t.text))
+        .map((t) => ({ ...t, id: t.id + 'c', done: false }));
+      setTasks([...list, ...carried]);
+    };
+
+    render();
+  </script>
+</body>
+</html>
